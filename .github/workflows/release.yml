@@ -1,0 +1,104 @@
+# Builds stim-offline and stim-batch for Windows, macOS and Linux and, for a
+# v* tag, publishes them as a GitHub release. A manual run (Actions tab, "Run
+# workflow") builds and tests without releasing.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, platform: windows-x86_64, ext: .exe }
+          - { os: macos-latest,   platform: macos-arm64,    ext: '' }
+          # The oldest runner: the binaries need no newer glibc than it has.
+          - { os: ubuntu-22.04,   platform: linux-x86_64,   ext: '' }
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: ldc-1.42.0
+
+      - name: Unit tests
+        run: dub test --compiler=ldc2
+
+      # Plain release, as README.md tells you to build. Not -mcpu=native,
+      # which would target the runner's CPU.
+      - name: Build
+        run: |
+          dub build --config=offline --build=release --compiler=ldc2
+          dub build --config=batch   --build=release --compiler=ldc2
+
+      # --test prints a report rather than failing, so this catches crashes.
+      - name: Test signals
+        run: |
+          mkdir selftest
+          cd selftest
+          ../stim-offline${{ matrix.ext }} --test 2>&1 | tee report.txt
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: selftest-${{ matrix.platform }}
+          path: selftest/
+
+      - name: Package
+        run: |
+          name="stim-${GITHUB_REF_NAME//\//-}-${{ matrix.platform }}"
+          mkdir "$name"
+          cp stim-offline${{ matrix.ext }} stim-batch${{ matrix.ext }} README.md LICENSE "$name/"
+          ./stim-offline${{ matrix.ext }} --version > "$name/build-id.txt"
+          if [ "$RUNNER_OS" = Windows ]; then
+            7z a "$name.zip" "$name"
+          else
+            tar czf "$name.tar.gz" "$name"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.platform }}
+          path: |
+            stim-*.zip
+            stim-*.tar.gz
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+
+      # A release published on the website creates its tag, which starts this
+      # run: then the archives are added to it. A pushed tag gets a new one.
+      - name: Create or add to release
+        run: |
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* \
+              --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}

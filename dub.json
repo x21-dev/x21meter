@@ -1,0 +1,46 @@
+{
+    "name": "stim",
+    "description": "stim-offline and stim-batch: per-frame audio feature extraction for a music stimulation measure",
+    "authors": ["x21"],
+    "license": "CC-BY-ND-4.0",
+
+    "sourcePaths": ["source"],
+    "importPaths": ["source"],
+    "stringImportPaths": ["source/stimulation"],
+
+    "configurations": [
+        {
+            "name": "offline",
+            "targetType": "executable",
+            "targetName": "stim-offline",
+            "versions": ["StimUseOwnFFT", "StimOfflineMain"],
+            "dependencies": {
+                "dplug:core": "~>16.5.5",
+                "audio-formats": "~>3.1.0",
+                "gamut": "~>3.3.0",
+                "canvasity": "~>1.0.3"
+            }
+        },
+        {
+            "name": "batch",
+            "targetType": "executable",
+            "targetName": "stim-batch",
+            "mainSourceFile": "tools/stim_batch.d",
+            "sourceFiles": ["tools/stim_batch.d"],
+            "excludedSourceFiles": ["source/stimulation/*.d"]
+        },
+        {
+            "name": "unittest",
+            "targetType": "executable",
+            "targetName": "stim-unittest",
+            "mainSourceFile": "source/stimulation/tests.d",
+            "versions": ["StimUseOwnFFT", "StimUnittestMain"],
+            "dependencies": {
+                "dplug:core": "~>16.5.5",
+                "audio-formats": "~>3.1.0",
+                "gamut": "~>3.3.0",
+                "canvasity": "~>1.0.3"
+            }
+        }
+    ]
+}

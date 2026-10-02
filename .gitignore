@@ -1,0 +1,7 @@
+# dub artefacts and the built tools
+.dub/
+*.exe
+*.pdb
+/stim-offline
+/stim-batch
+/stim-unittest

@@ -1,0 +1,14 @@
+{
+	"fileVersion": 1,
+	"versions": {
+		"audio-formats": "3.1.0",
+		"canvasity": "1.0.7",
+		"colors": "0.0.4",
+		"dplug": "16.5.5",
+		"gamut": "3.3.5",
+		"intel-intrinsics": "1.14.10",
+		"miniz": "0.0.4",
+		"numem": "1.6.12",
+		"silly": "1.1.1"
+	}
+}
