@@ -7,15 +7,13 @@
 /// macOS or Linux one (LF) give the same ID.
 module stimulation.buildid;
 
-version (StimUseOwnFFT) private enum string FFT = "own-fft";
-else                    private enum string FFT = "dplug-fft";
-
 /// Eight hex digits. Every core module belongs in this list.
 enum string CORE_BUILD_ID = fnv1aHex(import("analyser.d") ~ "\0"
                                      ~ import("fingerprint.d") ~ "\0"
                                      ~ import("engine.d") ~ "\0"
                                      ~ import("timeline.d") ~ "\0"
-                                     ~ FFT);
+                                     ~ import("fpcontrol.d") ~ "\0"
+                                     ~ import("nogc.d"));
 
 /// 32-bit FNV-1a of `s` without its carriage returns, as hex.
 string fnv1aHex(string s) pure nothrow

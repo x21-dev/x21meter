@@ -1,19 +1,11 @@
 module stimulation.analyser;
 
 import std.math : PI, PI_2, PI_4, sin, cos, cosh, exp, sqrt, log2, log10, pow, ceil, floor;
-import std.complex : Complex;
-
-import dplug.core.nogc : mallocSlice, freeSlice;
+import stimulation.nogc : mallocSlice, freeSlice;
 
 // noalias on pointer parameters, which the per-bin loop needs to vectorise.
 version (LDC) import ldc.attributes : restrict;
 else enum restrict = 0;
-
-// Set -version=StimUseOwnFFT to fall back to the self-contained transform.
-version (StimUseOwnFFT) {} else version = StimUseDplugFFT;
-
-version (StimUseDplugFFT)
-    import dplug.fft : RFFT;   // dub dependency: "dplug:fft"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Configuration
@@ -174,8 +166,14 @@ struct Biquad
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Stage 0 - K-weighting (ITU-R BS.1770)
+// Stage 0 - K-weighting
 // ─────────────────────────────────────────────────────────────────────────────
+// A cookbook high shelf (about +4 dB from ~1.7 kHz up) into a cookbook
+// highpass (38 Hz, Q 0.5), both redesigned at the sample rate from the
+// parameters below. Those are libebur128's, fitted for its own shelf
+// formula; through the cookbook formulas they give a curve of the same shape
+// but not the same values: at 48 kHz it reads -1.18 dB at 100 Hz,
+// +0.44 dB at 1 kHz and +4.0 dB at 15 kHz.
 
 struct KWeighting
 {
@@ -268,161 +266,129 @@ struct BandBank
 
 struct SpectrumEngine
 {
-    version (StimUseDplugFFT)
+    // A real n-point transform as an n/2-point complex one, even samples in
+    // the real part and odd in the imaginary, then one pass that splits the
+    // two spectra apart. The complex transform is iterative radix-2 on
+    // separate re/im arrays, and every stage reads its own contiguous
+    // twiddles, so the butterflies are unit-stride and vectorise.
+    int n, h;                  // h = n / 2, the complex length
+    float[] zr, zi;            // h: the complex transform, in place
+    float[] twc, tws;          // stages 8 .. h, each len / 2 twiddles
+    float[] pc, ps;            // h + 1: e^(-2 pi i k / n) for the split
+    float[] xr, xi;            // h + 1: the spectrum
+    int[]   rev;               // h: bit reversal
+
+    void initialize(int nfft) nothrow @nogc
     {
-        RFFT!float rfft;
-        Complex!float[] spec;      // NBINS
+        assert(nfft >= 8 && (nfft & (nfft - 1)) == 0);
+        n = nfft;
+        h = n / 2;
+        int bits = 0;
+        while ((1 << bits) < h) bits++;
 
-        void initialize(int nfft) nothrow @nogc
+        zr  = mallocSlice!float(h);
+        zi  = mallocSlice!float(h);
+        rev = mallocSlice!int(h);
+        twc = mallocSlice!float(h);   // 4 + 8 + ... + h / 2 < h
+        tws = mallocSlice!float(h);
+        pc  = mallocSlice!float(h + 1);
+        ps  = mallocSlice!float(h + 1);
+        xr  = mallocSlice!float(h + 1);
+        xi  = mallocSlice!float(h + 1);
+
+        foreach (i; 0 .. h)
         {
-            rfft.initialize(nfft);
-            spec = mallocSlice!(Complex!float)(nfft / 2 + 1);
+            int r = 0;
+            foreach (b; 0 .. bits)
+                if (i & (1 << b)) r |= 1 << (bits - 1 - b);
+            rev[i] = r;
         }
-
-        void destroy() nothrow @nogc
+        int off = 0;
+        for (int len = 8; len <= h; len <<= 1)
+            foreach (j; 0 .. len / 2)
+            {
+                immutable double w = -2.0 * PI * j / len;
+                twc[off] = cast(float) cos(w);
+                tws[off] = cast(float) sin(w);
+                off++;
+            }
+        foreach (k; 0 .. h + 1)
         {
-            spec.freeSlice();
-            spec = null;
+            immutable double w = -2.0 * PI * k / n;
+            pc[k] = cast(float) cos(w);
+            ps[k] = cast(float) sin(w);
         }
-
-        void forward(const(float)[] timeIn) nothrow @nogc
-        {
-            // RFFT copies timeIn into its own aligned scratch, so no staging
-            // buffer here. timeIn.length must equal the configured FFT length.
-            rfft.forwardTransform(timeIn, spec);
-        }
-
-        enum int stride = 2;   // interleaved re, im
-        const(float)* rePtr() const pure nothrow @nogc { return cast(const(float)*) spec.ptr; }
-        const(float)* imPtr() const pure nothrow @nogc { return cast(const(float)*) spec.ptr + 1; }
     }
-    else
+
+    void destroy() nothrow @nogc
     {
-        // Self-contained. A real n-point transform as an n/2-point complex
-        // one, even samples in the real part and odd in the imaginary, then
-        // one pass that splits the two spectra apart. The complex transform
-        // is iterative radix-2 on separate re/im arrays, and every stage
-        // reads its own contiguous twiddles, so the butterflies are
-        // unit-stride and vectorise.
-        int n, h;                  // h = n / 2, the complex length
-        float[] zr, zi;            // h: the complex transform, in place
-        float[] twc, tws;          // stages 8 .. h, each len / 2 twiddles
-        float[] pc, ps;            // h + 1: e^(-2 pi i k / n) for the split
-        float[] xr, xi;            // h + 1: the spectrum
-        int[]   rev;               // h: bit reversal
-
-        void initialize(int nfft) nothrow @nogc
-        {
-            assert(nfft >= 8 && (nfft & (nfft - 1)) == 0);
-            n = nfft;
-            h = n / 2;
-            int bits = 0;
-            while ((1 << bits) < h) bits++;
-
-            zr  = mallocSlice!float(h);
-            zi  = mallocSlice!float(h);
-            rev = mallocSlice!int(h);
-            twc = mallocSlice!float(h);   // 4 + 8 + ... + h / 2 < h
-            tws = mallocSlice!float(h);
-            pc  = mallocSlice!float(h + 1);
-            ps  = mallocSlice!float(h + 1);
-            xr  = mallocSlice!float(h + 1);
-            xi  = mallocSlice!float(h + 1);
-
-            foreach (i; 0 .. h)
-            {
-                int r = 0;
-                foreach (b; 0 .. bits)
-                    if (i & (1 << b)) r |= 1 << (bits - 1 - b);
-                rev[i] = r;
-            }
-            int off = 0;
-            for (int len = 8; len <= h; len <<= 1)
-                foreach (j; 0 .. len / 2)
-                {
-                    immutable double w = -2.0 * PI * j / len;
-                    twc[off] = cast(float) cos(w);
-                    tws[off] = cast(float) sin(w);
-                    off++;
-                }
-            foreach (k; 0 .. h + 1)
-            {
-                immutable double w = -2.0 * PI * k / n;
-                pc[k] = cast(float) cos(w);
-                ps[k] = cast(float) sin(w);
-            }
-        }
-
-        void destroy() nothrow @nogc
-        {
-            zr.freeSlice();  zi.freeSlice();  rev.freeSlice();
-            twc.freeSlice(); tws.freeSlice(); pc.freeSlice(); ps.freeSlice();
-            xr.freeSlice();  xi.freeSlice();
-            zr = zi = twc = tws = pc = ps = xr = xi = null;
-            rev = null;
-        }
-
-        void forward(const(float)[] timeIn) pure nothrow @nogc
-        {
-            foreach (i; 0 .. h)
-            {
-                zr[rev[i]] = timeIn[2 * i];
-                zi[rev[i]] = timeIn[2 * i + 1];
-            }
-
-            // Stages of length 2 and 4 together: their twiddles are 1 and
-            // -i, so no multiplies.
-            for (int i = 0; i < h; i += 4)
-            {
-                immutable float r0 = zr[i] + zr[i + 1],     i0 = zi[i] + zi[i + 1];
-                immutable float r1 = zr[i] - zr[i + 1],     i1 = zi[i] - zi[i + 1];
-                immutable float r2 = zr[i + 2] + zr[i + 3], i2 = zi[i + 2] + zi[i + 3];
-                immutable float r3 = zr[i + 2] - zr[i + 3], i3 = zi[i + 2] - zi[i + 3];
-                zr[i]     = r0 + r2;  zi[i]     = i0 + i2;
-                zr[i + 2] = r0 - r2;  zi[i + 2] = i0 - i2;
-                // (r3 + i i3) * -i = i3 - i r3
-                zr[i + 1] = r1 + i3;  zi[i + 1] = i1 - r3;
-                zr[i + 3] = r1 - i3;  zi[i + 3] = i1 + r3;
-            }
-
-            int off = 0;
-            for (int len = 8; len <= h; len <<= 1)
-            {
-                immutable int half = len >> 1;
-                const(float)* wc = twc.ptr + off, ws = tws.ptr + off;
-                for (int i = 0; i < h; i += len)
-                {
-                    float* pr = zr.ptr + i, pi = zi.ptr + i;
-                    float* qr = pr + half,  qi = pi + half;
-                    foreach (j; 0 .. half)
-                    {
-                        immutable float tr = qr[j] * wc[j] - qi[j] * ws[j];
-                        immutable float ti = qr[j] * ws[j] + qi[j] * wc[j];
-                        immutable float ar = pr[j], ai = pi[j];
-                        qr[j] = ar - tr;  qi[j] = ai - ti;
-                        pr[j] = ar + tr;  pi[j] = ai + ti;
-                    }
-                }
-                off += half;
-            }
-
-            // X[k] = E[k] + e^(-2 pi i k / n) O[k], where E and O are the
-            // spectra of the even and odd samples: E = (Z[k] + conj Z[h-k]) / 2,
-            // O = (Z[k] - conj Z[h-k]) / 2i, with Z[h] = Z[0].
-            foreach (k; 0 .. h + 1)
-            {
-                immutable int a = k == h ? 0 : k, b = k == 0 ? 0 : h - k;
-                immutable float er = 0.5f * (zr[a] + zr[b]), ei = 0.5f * (zi[a] - zi[b]);
-                immutable float or = 0.5f * (zi[a] + zi[b]), oi = 0.5f * (zr[b] - zr[a]);
-                xr[k] = er + (pc[k] * or - ps[k] * oi);
-                xi[k] = ei + (pc[k] * oi + ps[k] * or);
-            }
-        }
-
-        enum int stride = 1;
-        const(float)* rePtr() const pure nothrow @nogc { return xr.ptr; }
-        const(float)* imPtr() const pure nothrow @nogc { return xi.ptr; }
+        zr.freeSlice();  zi.freeSlice();  rev.freeSlice();
+        twc.freeSlice(); tws.freeSlice(); pc.freeSlice(); ps.freeSlice();
+        xr.freeSlice();  xi.freeSlice();
+        zr = zi = twc = tws = pc = ps = xr = xi = null;
+        rev = null;
     }
+
+    void forward(const(float)[] timeIn) pure nothrow @nogc
+    {
+        foreach (i; 0 .. h)
+        {
+            zr[rev[i]] = timeIn[2 * i];
+            zi[rev[i]] = timeIn[2 * i + 1];
+        }
+
+        // Stages of length 2 and 4 together: their twiddles are 1 and
+        // -i, so no multiplies.
+        for (int i = 0; i < h; i += 4)
+        {
+            immutable float r0 = zr[i] + zr[i + 1],     i0 = zi[i] + zi[i + 1];
+            immutable float r1 = zr[i] - zr[i + 1],     i1 = zi[i] - zi[i + 1];
+            immutable float r2 = zr[i + 2] + zr[i + 3], i2 = zi[i + 2] + zi[i + 3];
+            immutable float r3 = zr[i + 2] - zr[i + 3], i3 = zi[i + 2] - zi[i + 3];
+            zr[i]     = r0 + r2;  zi[i]     = i0 + i2;
+            zr[i + 2] = r0 - r2;  zi[i + 2] = i0 - i2;
+            // (r3 + i i3) * -i = i3 - i r3
+            zr[i + 1] = r1 + i3;  zi[i + 1] = i1 - r3;
+            zr[i + 3] = r1 - i3;  zi[i + 3] = i1 + r3;
+        }
+
+        int off = 0;
+        for (int len = 8; len <= h; len <<= 1)
+        {
+            immutable int half = len >> 1;
+            const(float)* wc = twc.ptr + off, ws = tws.ptr + off;
+            for (int i = 0; i < h; i += len)
+            {
+                float* pr = zr.ptr + i, pi = zi.ptr + i;
+                float* qr = pr + half,  qi = pi + half;
+                foreach (j; 0 .. half)
+                {
+                    immutable float tr = qr[j] * wc[j] - qi[j] * ws[j];
+                    immutable float ti = qr[j] * ws[j] + qi[j] * wc[j];
+                    immutable float ar = pr[j], ai = pi[j];
+                    qr[j] = ar - tr;  qi[j] = ai - ti;
+                    pr[j] = ar + tr;  pi[j] = ai + ti;
+                }
+            }
+            off += half;
+        }
+
+        // X[k] = E[k] + e^(-2 pi i k / n) O[k], where E and O are the
+        // spectra of the even and odd samples: E = (Z[k] + conj Z[h-k]) / 2,
+        // O = (Z[k] - conj Z[h-k]) / 2i, with Z[h] = Z[0].
+        foreach (k; 0 .. h + 1)
+        {
+            immutable int a = k == h ? 0 : k, b = k == 0 ? 0 : h - k;
+            immutable float er = 0.5f * (zr[a] + zr[b]), ei = 0.5f * (zi[a] - zi[b]);
+            immutable float or = 0.5f * (zi[a] + zi[b]), oi = 0.5f * (zr[b] - zr[a]);
+            xr[k] = er + (pc[k] * or - ps[k] * oi);
+            xi[k] = ei + (pc[k] * oi + ps[k] * or);
+        }
+    }
+
+    enum int stride = 1;
+    const(float)* rePtr() const pure nothrow @nogc { return xr.ptr; }
+    const(float)* imPtr() const pure nothrow @nogc { return xi.ptr; }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -491,9 +457,10 @@ public:
         nbins    = nfft / 2 + 1;
 
         // Flux is a norm over bins, and zero padding the frame up to nfft adds
-        // bins: for the same audio it grows with sqrt(nfft / frameLen), which
-        // is 1.07 at 48 and 96 kHz but 1.16 at 44.1 and 88.2 kHz. Scale it to
-        // the 48 kHz ratio, so 48 kHz results are unchanged.
+        // bins: for the same audio it grows with sqrt(nfft / frameLen). The
+        // ratio before the square root is 1.07 at 48 and 96 kHz but 1.16 at
+        // 44.1 and 88.2 kHz, so flux grows by 1.03 and 1.08. Scale it to the
+        // 48 kHz ratio, so 48 kHz results are unchanged.
         fluxNorm = cast(float) sqrt((cast(double) NFFT / FRAME_LEN)
                                     / (cast(double) nfft / frameLen));
 

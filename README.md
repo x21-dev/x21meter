@@ -67,7 +67,7 @@ stim-offline --no-png "D:\Music\track.mp3"
 
 ### Input
 
-- **Formats:** anything the audio-formats library decodes: WAV, FLAC, MP3, OGG Vorbis and Opus. QOA, MOD and XM should also work but haven't been tested.
+- **Formats:** WAV, FLAC, MP3 and Ogg Vorbis. QOA, MOD and XM should also work but haven't been tested. Opus isn't supported: convert it first, for example with `ffmpeg -i track.opus track.flac`.
 - **Lossy files can mislead.** MP3, AAC, Ogg Vorbis and Opus throw away what their model of hearing says you won't miss. They cut the top end (a 128 kbps MP3 near 16 kHz), leave quantisation noise where quiet detail was, and smear sharp attacks. Those are exactly what the features measure: band levels and crests, the spectral edges, flux and live bins. So the fingerprint and the match score of a lossy file can differ from the same track's lossless master, and lossless copies have scored higher in practice. Use lossless files (WAV, FLAC) when the score matters, and compare lossy with lossy, lossless with lossless. Higher bitrates distort less, but no bitrate makes a lossy copy equivalent. The same goes for the plugin, which measures whatever the player sends it, a lossy stream included.
 - **Sample rate:** any rate from 44.1 kHz up. Frames are **40 ms at every sample rate** (1764 samples at 44.1 kHz, 1920 at 48 kHz, 3840 at 96 kHz), and the spectral features look only at **30 Hz–16 kHz**, so files at different rates give comparable features. Nothing is resampled. Below 35.6 kHz the analysis has to stop short of 16 kHz, and a warning goes to stderr. One small difference remains: lower rates catch fewer peaks that fall between samples, so crest can read a little lower at 44.1 kHz than at 96 kHz.
 - **Channels:** mono is copied to both sides, so `stereo_width` reads 0. Files with more than two channels are analysed using only the first two (front left and right in 5.1/7.1), with a warning.
@@ -126,7 +126,7 @@ One row per analysis frame. A frame is 40 ms long and frames start every 20 ms, 
 
 The last eight columns, from `red` on, are derived from the fingerprint rather than measured by the analyser. They come after the analyser's columns, so those keep their positions.
 
-Everything is measured on the K-weighted mid signal, (L+R)/2. K-weighting is the loudness filter from the BS.1770 standard. The `_st` columns are **semitones relative to A 440 Hz**: 0 = 440 Hz, +12 = 880 Hz, −12 = 220 Hz. A silent frame reads −120. The spectral features (`f_low_st`, `f_high_st`, `centroid_st`, `flux`, `live_bins`) only use 30 Hz–16 kHz, the same range as the 24 bands. Above 16 kHz, lossy encoders decide what's left (a 128 kbps MP3 cuts off near 16 kHz), and most adults hear little of it. `f_low_st` can still dip slightly below 30 Hz (to about −52 semitones, 22 Hz), because the frequency estimate for the lowest bins can land a little under their nominal frequency.
+Everything is measured on the K-weighted mid signal, (L+R)/2. K-weighting is a loudness filter: a highpass at 38 Hz and a shelf that lifts everything above about 1.7 kHz by 4 dB. The `_st` columns are **semitones relative to A 440 Hz**: 0 = 440 Hz, +12 = 880 Hz, −12 = 220 Hz. A silent frame reads −120. The spectral features (`f_low_st`, `f_high_st`, `centroid_st`, `flux`, `live_bins`) only use 30 Hz–16 kHz, the same range as the 24 bands. Above 16 kHz, lossy encoders decide what's left (a 128 kbps MP3 cuts off near 16 kHz), and most adults hear little of it. `f_low_st` can still dip slightly below 30 Hz (to about −52 semitones, 22 Hz), because the frequency estimate for the lowest bins can land a little under their nominal frequency.
 
 ---
 
@@ -433,7 +433,7 @@ stim-batch --skip-existing --no-png "D:\Music"
 
 ### Which files are processed
 
-- Folders are searched recursively for `.wav .flac .mp3 .ogg .opus`. The extension check ignores case; other files are ignored. Lossy files are analysed like the rest, but their results can differ from lossless copies of the same tracks: see [Input](#input).
+- Folders are searched recursively for `.wav .flac .mp3 .ogg`. The extension check ignores case; other files are ignored. Lossy files are analysed like the rest, but their results can differ from lossless copies of the same tracks: see [Input](#input).
 - The same file given twice (for example, directly and inside a dropped folder) is only processed once. Paths are compared ignoring case on Windows and macOS, whose file systems ignore case, and exactly on Linux.
 
 ### Where outputs go
@@ -511,7 +511,7 @@ Run from a terminal, stim-batch never waits for Enter. If you start it some othe
 ## Limitations
 
 - No resampling. Every rate gets 40 ms frames and the 30 Hz–16 kHz range, but crest is measured on sample peaks, so it can read a little lower at 44.1 kHz than at 96 kHz. `stim-offline --test` ends with a table comparing the synthetic signals at 44.1, 48 and 96 kHz.
-- Lossy codecs (MP3, Ogg Vorbis, Opus) change what the features measure, so a lossy file's fingerprint and score can differ from the lossless master's. Nothing warns about it at run time. See [Input](#input).
+- Lossy codecs (MP3, Ogg Vorbis) change what the features measure, so a lossy file's fingerprint and score can differ from the lossless master's. Nothing warns about it at run time. See [Input](#input).
 - The whole file is decoded into memory before analysis.
 - Output paths longer than 260 characters (deeply nested folders under a long `--out`) haven't been tested.
 - The PNG has no text labels or legend; this file is the legend. The CSV holds the exact values.

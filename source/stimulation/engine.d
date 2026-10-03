@@ -5,7 +5,7 @@
 /// Neither does any analysis of its own, so they cannot drift apart.
 module stimulation.engine;
 
-import dplug.core.fpcontrol : FPControl;
+import stimulation.fpcontrol : FPControl;
 
 import stimulation.analyser;
 import stimulation.fingerprint;

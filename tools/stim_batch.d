@@ -29,7 +29,9 @@ import std.stdio;
 import std.string : indexOf, lineSplitter, strip;
 import std.uni : toLower;
 
-immutable string[] AUDIO_EXTS = [".wav", ".flac", ".mp3", ".ogg", ".opus"];
+// No .opus: audio-formats decodes Opus only in its LGPL configuration, which
+// the proprietary and CC BY-ND builds can't link.
+immutable string[] AUDIO_EXTS = [".wav", ".flac", ".mp3", ".ogg"];
 
 version (Windows) enum string OFFLINE_EXE = "stim-offline.exe";
 else              enum string OFFLINE_EXE = "stim-offline";

@@ -462,8 +462,8 @@ if (isForwardRange!R && hasLength!R)
 }
 
 /// Peak-to-RMS in dB over a whole buffer. The analyser measures crest AFTER
-/// K-weighting, which is what BS.1770 asks for; this is the pre-filter value,
-/// and it is the one that is 0 dB for a square wave.
+/// K-weighting; this is the pre-filter value, and it is the one that is 0 dB
+/// for a square wave.
 double crestDb(const(float)[] x) pure nothrow @nogc
 {
     if (x.length == 0) return 0;

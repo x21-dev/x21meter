@@ -13,12 +13,11 @@
             "name": "offline",
             "targetType": "executable",
             "targetName": "stim-offline",
-            "versions": ["StimUseOwnFFT", "StimOfflineMain"],
+            "versions": ["StimOfflineMain"],
             "dependencies": {
-                "dplug:core": "~>16.5.5",
                 "audio-formats": "~>3.1.0",
                 "gamut": "~>3.3.0",
-                "canvasity": "~>1.0.3"
+                "intel-intrinsics": "~>1.14"
             }
         },
         {
@@ -34,11 +33,11 @@
             "targetType": "executable",
             "targetName": "stim-unittest",
             "mainSourceFile": "source/stimulation/tests.d",
-            "versions": ["StimUseOwnFFT", "StimUnittestMain"],
+            "versions": ["StimUnittestMain"],
             "dependencies": {
-                "dplug:core": "~>16.5.5",
                 "audio-formats": "~>3.1.0",
                 "gamut": "~>3.3.0",
+                "intel-intrinsics": "~>1.14",
                 "canvasity": "~>1.0.3"
             }
         }

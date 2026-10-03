@@ -454,7 +454,7 @@ unittest
 unittest
 {
     import inteli.xmmintrin : _mm_getcsr, _MM_FLUSH_ZERO_MASK;
-    import dplug.core.fpcontrol : FPControl;
+    import stimulation.fpcontrol : FPControl;
 
     // What process() switches on. On arm64 intel-intrinsics maps this bit to
     // the FPCR's flush-to-zero flag, so the test means the same there.
