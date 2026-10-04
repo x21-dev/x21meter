@@ -168,7 +168,8 @@ struct Biquad
 // ─────────────────────────────────────────────────────────────────────────────
 // Stage 0 - K-weighting
 // ─────────────────────────────────────────────────────────────────────────────
-// A cookbook high shelf (about +4 dB from ~1.7 kHz up) into a cookbook
+// A cookbook high shelf (+2 dB at its ~1.7 kHz midpoint, about +4 dB from
+// ~5 kHz up) into a cookbook
 // highpass (38 Hz, Q 0.5), both redesigned at the sample rate from the
 // parameters below. Those are libebur128's, fitted for its own shelf
 // formula; through the cookbook formulas they give a curve of the same shape
@@ -261,7 +262,7 @@ struct BandBank
 // Stage 1 - spectrum engine
 // ─────────────────────────────────────────────────────────────────────────────
 // The bare transform: forward() leaves the complex spectrum where rePtr() and
-// imPtr() point, bin k at [stride * k], until the next forward(). The Analyser
+// imPtr() point, bin k at [k], until the next forward(). The Analyser
 // extracts only what it needs, so no per-bin transcendentals happen here.
 
 struct SpectrumEngine
@@ -386,7 +387,6 @@ struct SpectrumEngine
         }
     }
 
-    enum int stride = 1;
     const(float)* rePtr() const pure nothrow @nogc { return xr.ptr; }
     const(float)* imPtr() const pure nothrow @nogc { return xi.ptr; }
 }
@@ -643,7 +643,6 @@ private:
     bool spectralStats(ref FrameFeatures f) pure nothrow @nogc
     {
         enum lanes = 4;
-        enum st = SpectrumEngine.stride;
 
         // Locals, not fields: a store through a float* could otherwise alias
         // the slices in `this`, and every bin would reload them.
@@ -658,7 +657,7 @@ private:
         for (; k + lanes <= hi + 1; k += lanes)
             static foreach (l; 0 .. lanes)
             {{
-                immutable float re = sRe[st * (k + l)], im = sIm[st * (k + l)];
+                immutable float re = sRe[k + l], im = sIm[k + l];
                 immutable float m2 = re * re + im * im;
                 wgt[k + l] = m2;
                 pk[l] = m2 > pk[l] ? m2 : pk[l];
@@ -666,7 +665,7 @@ private:
         float pkTail = 0.0f;
         for (; k <= hi; ++k)
         {
-            immutable float re = sRe[st * k], im = sIm[st * k];
+            immutable float re = sRe[k], im = sIm[k];
             immutable float m2 = re * re + im * im;
             wgt[k] = m2;
             pkTail = m2 > pkTail ? m2 : pkTail;
@@ -680,8 +679,8 @@ private:
         {
             foreach (j; lo .. hi + 1)
             {
-                prevRe[j]  = sRe[st * j];
-                prevIm[j]  = sIm[st * j];
+                prevRe[j]  = sRe[j];
+                prevIm[j]  = sIm[j];
                 prevMag[j] = sqrt(wgt[j]);
             }
             havePrevFrame = true;
@@ -768,10 +767,9 @@ private:
                         @restrict float* prevMag, @restrict float* wgt,
                         @restrict float* fq, @restrict float* rise) pure nothrow @nogc
     {
-        enum st = SpectrumEngine.stride;
         foreach (j; lo .. hi + 1)
         {
-            immutable float re = sRe[st * j], im = sIm[st * j];
+            immutable float re = sRe[j], im = sIm[j];
             immutable float pr = prevRe[j], pi = prevIm[j];
             immutable float m2 = wgt[j];
 

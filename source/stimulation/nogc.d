@@ -2,8 +2,13 @@
     Slices allocated with malloc, for the core's @nogc buffers.
 
     Copied from Dplug 16.5.5, dplug/core/nogc.d (mallocSlice,
-    mallocSliceNoInit, freeSlice), unchanged, so that the core does not
-    depend on Dplug. The plugin still uses Dplug itself.
+    mallocSliceNoInit, freeSlice), so that the core does not depend on
+    Dplug. The plugin still uses Dplug itself.
+
+    Changed from the original: mallocSliceNoInit fails with an
+    OutOfMemoryError when the size overflows or malloc returns null, where
+    the original returned a slice over a null pointer. Each changed line
+    is marked "Changed from Dplug".
 
     Copyright: Copyright 2016-2024, Guillaume Piolat.
     License:   Boost Software License 1.0, reproduced below.
@@ -36,6 +41,7 @@ module stimulation.nogc;
 
 import core.stdc.string : memcpy;
 import core.stdc.stdlib : malloc, free;
+import core.exception : onOutOfMemoryError; // Changed from Dplug: added
 
 /// Allocates a slice with `malloc`.
 T[] mallocSlice(T)(size_t count) nothrow @nogc
@@ -58,7 +64,13 @@ T[] mallocSlice(T)(size_t count) nothrow @nogc
 /// Allocates a slice with `malloc`, but does not initialize the content.
 T[] mallocSliceNoInit(T)(size_t count) nothrow @nogc
 {
+    // Changed from Dplug: fail on an overflowing size or a failed malloc,
+    // rather than return a slice over a null pointer.
+    if (count > size_t.max / T.sizeof)
+        onOutOfMemoryError();
     T* p = cast(T*) malloc(count * T.sizeof);
+    if (p is null && count != 0)
+        onOutOfMemoryError();
     return p[0..count];
 }
 

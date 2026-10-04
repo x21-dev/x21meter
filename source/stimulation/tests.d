@@ -502,7 +502,7 @@ unittest
                 re += x[i] * cos(2 * PI * (cast(long) k * i % n) / n);
                 im -= x[i] * sin(2 * PI * (cast(long) k * i % n) / n);
             }
-            immutable double dr = s.rePtr()[s.stride * k] - re, di = s.imPtr()[s.stride * k] - im;
+            immutable double dr = s.rePtr()[k] - re, di = s.imPtr()[k] - im;
             worst = max(worst, sqrt(dr * dr + di * di) / scale);
         }
         assert(worst < 1e-6, format("n %d: error %.3g of full scale", n, worst));

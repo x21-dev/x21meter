@@ -26,21 +26,21 @@ enum float SILENT_DB     = -70.0f;  // full-band level: silence below this
 // --smooth-frames overrides; the plugin always uses it.
 enum int   PRINT_SMOOTH_FRAMES = 80;
 // Fingerprint channel ranges: the pooled p10..p90 of the smoothed values over
-// 72 tracks from 24 sources across dance, pop, 90s, chill, acoustic, piano and
-// classical, soundtrack and rock, so each channel spends about the same span
-// of 0..1 on typical music. Measured with 40 ms frames, the 30 Hz - 16 kHz
-// spectrum and 50-frame forward-only smoothing.
-enum float PRINT_FLUX_LO   =  0.31f;  // red: flux / frame amplitude
-enum float PRINT_FLUX_HI   =  0.78f;
+// audible frames of 72 tracks, 3 from each of 24 sources across dance, pop,
+// 90s, chill, acoustic, piano, classical, soundtrack and rock, so each channel
+// spends about the same span of 0..1 on typical music. Measured 2026-10-04
+// with the matched band filters and 80-frame smoothing (they were 0.31..0.78,
+// 3..12 and 0.89..1.95, from the bilinear filters and 50 frames), and checked
+// on 24 current chart hits, where the three channels now average about level.
+// See HELP.md, Tuning, for the procedure.
+enum float PRINT_FLUX_LO   =  0.290f; // red: flux / frame amplitude
+enum float PRINT_FLUX_HI   =  0.724f;
 // Green is mapped on a log scale between these (centroid SD, semitones): its
-// distribution is skewed, with a long tail in dance music. The ends are set
-// so green averages about 0.74 on a set of 24 commercial hits, level with red
-// and blue there; the pooled p10..p90 (3.5..14.8) left it at 0.53, the weakest
-// channel in half of the hits' frames.
-enum float PRINT_SD_LO     =  3.0f;
-enum float PRINT_SD_HI     = 12.0f;
-enum float PRINT_SPREAD_LO =  0.89f;  // blue: spread of the 24 band crests, dB
-enum float PRINT_SPREAD_HI =  1.95f;
+// distribution is skewed, with a long tail in dance music.
+enum float PRINT_SD_LO     =  3.790f;
+enum float PRINT_SD_HI     = 14.263f;
+enum float PRINT_SPREAD_LO =  0.913f; // blue: spread of the 24 band crests, dB
+enum float PRINT_SPREAD_HI =  1.936f;
 enum float PRINT_FLOOR    =  0.1f;   // added to each channel so three near-zero
                                      // values read as balanced, not as noise
 // Power on each channel's ratio to the strongest. Below 1 lifts the weaker
